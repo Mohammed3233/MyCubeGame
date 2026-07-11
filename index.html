@@ -2,147 +2,289 @@
 <html lang="ar">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>لعبة الأبواب والمكعب</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>لعبة الرماية والقتال</title>
   <style>
-    body { margin: 0; overflow: hidden; background: #000; font-family: sans-serif; color: white; }
-    #ui { position: absolute; top: 10px; left: 10px; right: 10px; display: flex; justify-content: space-between; font-size: 20px; font-weight: bold; z-index: 10; }
-    #target { padding: 5px 15px; border-radius: 8px; color: black; }
+    * { touch-action: none; box-sizing: border-box; user-select: none; }
+    body { margin: 0; padding: 0; overflow: hidden; background: #000; font-family: system-ui, -apple-system, sans-serif; color: white; }
+    
+    /* واجهة النتيجة والصحة */
+    #ui { 
+      position: absolute; 
+      top: 15px; 
+      left: 15px; 
+      right: 15px; 
+      display: flex; 
+      justify-content: space-between; 
+      align-items: center;
+      z-index: 1000;
+      background: rgba(0, 0, 0, 0.7);
+      padding: 12px 20px;
+      border-radius: 12px;
+      border: 1px solid #444;
+    }
+    #score { font-size: 20px; font-weight: bold; color: #00ffcc; }
+    #health { font-size: 20px; font-weight: bold; color: #ff3333; }
+    
+    /* مؤشر التصويب في المنتصف */
+    #crosshair {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: 20px;
+      height: 20px;
+      transform: translate(-50%, -50%);
+      pointer-events: none;
+      z-index: 1000;
+    }
+    #crosshair::before, #crosshair::after {
+      content: '';
+      position: absolute;
+      background: #00ff00;
+    }
+    #crosshair::before { top: 9px; left: 0; width: 20px; height: 2px; }
+    #crosshair::after { top: 0; left: 9px; width: 2px; height: 20px; }
+
+    /* زر إطلاق النار للآيباد/الجوال */
+    #shootBtn {
+      position: absolute;
+      bottom: 30px;
+      right: 30px;
+      width: 90px;
+      height: 90px;
+      background: rgba(255, 0, 0, 0.7);
+      border: 3px solid #fff;
+      border-radius: 50%;
+      color: white;
+      font-size: 18px;
+      font-weight: bold;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      z-index: 1000;
+      box-shadow: 0 0 15px rgba(255, 0, 0, 0.5);
+    }
+    #shootBtn:active { background: rgba(255, 0, 0, 0.95); transform: scale(0.95); }
   </style>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 </head>
 <body>
+
   <div id="ui">
-    <div id="score">النتيجة: 0</div>
-    <div id="target">الهدف: أخضر</div>
+    <div id="score">النقاط: 0</div>
+    <div id="health">الصحة: 100%</div>
   </div>
+
+  <div id="crosshair"></div>
+  <div id="shootBtn">💥 إطلاق</div>
 
   <script>
     let score = 0;
-    let speed = 0.15;
-    let targetColor = "أخضر";
-    const colorsMap = { "أصفر": 0xffff00, "أخضر": 0x00ff00, "أزرق": 0x0000ff, "أحمر": 0xff0000 };
-    const colorNames = ["أصفر", "أخضر", "أزرق", "أحمر"];
+    let health = 100;
+    let enemies = [];
+    let bullets = [];
 
-    // 1. إنشاء المشهد والكاميرا
+    // المشهد والكاميرا
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x000000);
+    scene.background = new THREE.Color(0x050510);
+    scene.fog = new THREE.FogExp2(0x050510, 0.015);
 
-    const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+    const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+    camera.position.set(0, 1.6, 0); // ارتفاع اللاعب
+
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     document.body.appendChild(renderer.domElement);
 
     // الإضاءة
     const light = new THREE.DirectionalLight(0xffffff, 1);
-    light.position.set(0, 10, 10);
+    light.position.set(10, 20, 10);
     scene.add(light);
     scene.add(new THREE.AmbientLight(0x404040));
 
-    // 2. السيب (الأرضية)
-    const floorGeo = new THREE.BoxGeometry(7, 0.1, 2000);
-    const floorMat = new THREE.MeshLambertMaterial({ color: 0x444444 });
+    // الأرضية
+    const floorGeo = new THREE.PlaneGeometry(100, 100);
+    const floorMat = new THREE.MeshLambertMaterial({ color: 0x222233 });
     const floor = new THREE.Mesh(floorGeo, floorMat);
-    floor.position.set(0, -0.05, -1000);
+    floor.rotation.x = -Math.PI / 2;
     scene.add(floor);
 
-    // 3. المكعب (اللاعب)
-    const cubeGeo = new THREE.BoxGeometry(0.8, 0.8, 0.8);
-    const cubeMat = new THREE.MeshLambertMaterial({ color: colorsMap[targetColor] });
-    const cube = new THREE.Mesh(cubeGeo, cubeMat);
-    cube.position.set(0, 0.4, 25);
-    scene.add(cube);
+    // شبكة الأرضية للجمالية
+    const grid = new THREE.GridHelper(100, 40, 0x00ffcc, 0x444455);
+    grid.position.y = 0.01;
+    scene.add(grid);
 
-    // 4. الأبواب
-    const doorsGroup = new THREE.Group();
-    doorsGroup.position.set(0, 0, 10);
-    scene.add(doorsGroup);
+    // مجسم السلاح
+    const gunGroup = new THREE.Group();
+    const gunBodyGeo = new THREE.BoxGeometry(0.1, 0.15, 0.5);
+    const gunMat = new THREE.MeshLambertMaterial({ color: 0x111111 });
+    const gunBody = new THREE.Mesh(gunBodyGeo, gunMat);
+    
+    const gunBarrelGeo = new THREE.CylinderGeometry(0.03, 0.03, 0.4);
+    const gunBarrelMat = new THREE.MeshLambertMaterial({ color: 0x555555 });
+    const gunBarrel = new THREE.Mesh(gunBarrelGeo, gunBarrelMat);
+    gunBarrel.rotation.x = Math.PI / 2;
+    gunBarrel.position.set(0, 0.03, -0.3);
 
-    const doorPositions = [-2.4, -0.8, 0.8, 2.4];
-    const doorMeshes = [];
+    gunGroup.add(gunBody);
+    gunGroup.add(gunBarrel);
+    gunGroup.position.set(0.25, -0.25, -0.5);
+    camera.add(gunGroup);
+    scene.add(camera);
 
-    doorPositions.forEach((x, i) => {
-      const doorGeo = new THREE.BoxGeometry(1.6, 3.5, 0.3);
-      const doorMat = new THREE.MeshLambertMaterial({ color: colorsMap[colorNames[i]] });
-      const door = new THREE.Mesh(doorGeo, doorMat);
-      door.position.set(x, 1.75, 0);
-      doorsGroup.add(door);
-      doorMeshes.push(door);
-    });
+    // التدوير والتحكم بالنظر
+    let isLooking = false;
+    let prevX = 0, prevY = 0;
+    let lon = 0, lat = 0;
 
-    let currentDoorZ = 10;
-
-    // التحكم باللمس/السحب
-    let isDragging = false;
-    let previousX = 0;
-
-    window.addEventListener('pointerdown', (e) => { isDragging = true; previousX = e.clientX; });
-    window.addEventListener('pointerup', () => { isDragging = false; });
-    window.addEventListener('pointermove', (e) => {
-      if (isDragging) {
-        const deltaX = (e.clientX - previousX) * 0.01;
-        cube.position.x = Math.max(-2.4, Math.min(2.4, cube.position.x + deltaX));
-        previousX = e.clientX;
+    window.addEventListener('pointerdown', (e) => {
+      if (e.target.id !== 'shootBtn') {
+        isLooking = true;
+        prevX = e.clientX;
+        prevY = e.clientY;
       }
     });
 
-    function updateTarget() {
-      targetColor = colorNames[Math.floor(Math.random() * colorNames.length)];
-      cube.material.color.setHex(colorsMap[targetColor]);
-      document.getElementById('target').innerText = "الهدف: " + targetColor;
-      document.getElementById('target').style.backgroundColor = '#' + colorsMap[targetColor].toString(16).padStart(6, '0');
+    window.addEventListener('pointerup', () => { isLooking = false; });
+    window.addEventListener('pointermove', (e) => {
+      if (isLooking) {
+        lon += (e.clientX - prevX) * 0.25;
+        lat -= (e.clientY - prevY) * 0.25;
+        lat = Math.max(-85, Math.min(85, lat));
+        prevX = e.clientX;
+        prevY = e.clientY;
+
+        const phi = THREE.MathUtils.degToRad(90 - lat);
+        const theta = THREE.MathUtils.degToRad(lon);
+
+        const target = new THREE.Vector3();
+        target.x = camera.position.x + Math.sin(phi) * Math.cos(theta);
+        target.y = camera.position.y + Math.cos(phi);
+        target.z = camera.position.z + Math.sin(phi) * Math.sin(theta);
+        camera.lookAt(target);
+      }
+    });
+
+    // إنشاء الروبوتات
+    function createEnemy() {
+      const enemyGroup = new THREE.Group();
+      
+      // جسم الروبوت
+      const bodyGeo = new THREE.BoxGeometry(0.8, 1.2, 0.5);
+      const bodyMat = new THREE.MeshLambertMaterial({ color: 0xff1133 });
+      const body = new THREE.Mesh(bodyGeo, bodyMat);
+      body.position.y = 0.9;
+      
+      // رأس الروبوت
+      const headGeo = new THREE.BoxGeometry(0.5, 0.5, 0.5);
+      const headMat = new THREE.MeshLambertMaterial({ color: 0xffff00 });
+      const head = new THREE.Mesh(headGeo, headMat);
+      head.position.y = 1.75;
+
+      enemyGroup.add(body);
+      enemyGroup.add(head);
+
+      // مكان العثور العشوائي
+      const angle = Math.random() * Math.PI * 2;
+      const dist = 20 + Math.random() * 15;
+      enemyGroup.position.set(Math.cos(angle) * dist, 0, Math.sin(angle) * dist);
+
+      scene.add(enemyGroup);
+      enemies.push(enemyGroup);
     }
 
-    updateTarget();
+    // توليد الأعداء بشكل مستمر
+    setInterval(() => {
+      if (enemies.length < 8 && health > 0) createEnemy();
+    }, 2000);
 
-    // الحلقة الرئيسية للعبة (تشتغل 24 ساعة بدون توقف وبسلاسة)
+    // إطلاق النار
+    function shoot() {
+      if (health <= 0) return;
+
+      // تأثير ارتداد السلاح
+      gunGroup.position.z = -0.4;
+      setTimeout(() => gunGroup.position.z = -0.5, 80);
+
+      // الطلقة
+      const bulletGeo = new THREE.SphereGeometry(0.08, 8, 8);
+      const bulletMat = new THREE.MeshBasicMaterial({ color: 0xffff00 });
+      const bullet = new THREE.Mesh(bulletGeo, bulletMat);
+
+      const dir = new THREE.Vector3();
+      camera.getWorldDirection(dir);
+
+      bullet.position.copy(camera.position);
+      bullet.position.add(dir.clone().multiplyScalar(0.5));
+      bullet.userData = { dir: dir };
+
+      scene.add(bullet);
+      bullets.push(bullet);
+    }
+
+    document.getElementById('shootBtn').addEventListener('pointerdown', (e) => {
+      e.stopPropagation();
+      shoot();
+    });
+
+    // التحديث والتغيرات المباشرة
     function animate() {
       requestAnimationFrame(animate);
 
-      // تحريك المكعب للأمام
-      cube.position.z -= speed;
+      if (health <= 0) return;
 
-      // الكاميرا تتبع المكعب
-      camera.position.z = cube.position.z + 4.5;
-      camera.position.y = 2.5;
-      camera.position.x = cube.position.x * 0.8;
-      camera.lookAt(cube.position.x, 1, cube.position.z - 5);
+      // تحريك الطلقات
+      for (let i = bullets.length - 1; i >= 0; i--) {
+        const b = bullets[i];
+        b.position.add(b.userData.dir.clone().multiplyScalar(0.8));
 
-      // فحص الوصول للأبواب
-      if (cube.position.z <= currentDoorZ) {
-        let x = cube.position.x;
-        let chosen = "أصفر";
-        if (x > 1.2) chosen = "أحمر";
-        else if (x > 0) chosen = "أزرق";
-        else if (x > -1.2) chosen = "أخضر";
+        // فحص إصابة الروبوتات
+        for (let j = enemies.length - 1; j >= 0; j--) {
+          const e = enemies[j];
+          if (b.position.distanceTo(e.position) < 1.2) {
+            scene.remove(e);
+            enemies.splice(j, 1);
+            scene.remove(b);
+            bullets.splice(i, 1);
+            score += 10;
+            document.getElementById('score').innerText = "النقاط: " + score;
+            break;
+          }
+        }
 
-        if (chosen === targetColor) {
-          score++;
-          document.getElementById('score').innerText = "النتيجة: " + score;
-          
-          // زيادة السرعة
-          if (score >= 20) speed = 0.35;
-          else if (score >= 15) speed = 0.30;
-          else if (score >= 10) speed = 0.25;
-          else if (score >= 5) speed = 0.20;
+        // مسح الطلقات البعيدة
+        if (b && b.position.distanceTo(camera.position) > 50) {
+          scene.remove(b);
+          bullets.splice(i, 1);
+        }
+      }
 
-          currentDoorZ -= 15;
-          doorsParent.position.z = currentDoorZ;
-          updateTarget();
-        } else {
-          // خسارة وتصفير
-          score = 0;
-          speed = 0.15;
-          document.getElementById('score').innerText = "النتيجة: 0";
-          cube.position.set(0, 0.4, 25);
-          currentDoorZ = 10;
-          doorsGroup.position.z = 10;
-          updateTarget();
+      // تحريك الروبوتات نحو اللاعب
+      for (let i = 0; i < enemies.length; i++) {
+        const e = enemies[i];
+        e.lookAt(camera.position.x, 0, camera.position.z);
+        e.translateZ(0.04);
+
+        // الهجوم عند الاقتراب
+        if (e.position.distanceTo(camera.position) < 1.5) {
+          health -= 1;
+          document.getElementById('health').innerText = "الصحة: " + Math.max(0, health) + "%";
+          if (health <= 0) {
+            alert("🎯 انتهت اللعبة! نقاطك: " + score);
+            location.reload();
+          }
         }
       }
 
       renderer.render(scene, camera);
     }
+
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
 
     animate();
   </script>
