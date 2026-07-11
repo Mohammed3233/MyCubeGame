@@ -35,34 +35,20 @@
     }
     #start-btn:hover { background: #218838; }
 
-    /* برواز الهدف المتموضع فوق الأبواب في منتصف الشاشة */
-    #target-container {
+    /* النتيجة العليا */
+    #score-ui {
       position: absolute;
-      top: 20px;
+      top: 15px;
       left: 50%;
       transform: translateX(-50%);
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 8px;
-      z-index: 999;
-      pointer-events: none;
-    }
-    #score { 
-      font-size: 20px; 
-      font-weight: bold; 
-      color: #fff; 
-      text-shadow: 0 2px 4px #000;
-    }
-    #target-box {
-      border: 3px solid #fff;
-      padding: 10px 25px;
-      border-radius: 12px;
-      background: rgba(0, 0, 0, 0.85);
       font-size: 22px;
       font-weight: bold;
       color: #fff;
-      box-shadow: 0 4px 15px rgba(0,0,0,0.6);
+      background: rgba(0, 0, 0, 0.7);
+      padding: 8px 20px;
+      border-radius: 20px;
+      z-index: 999;
+      pointer-events: none;
     }
   </style>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
@@ -74,12 +60,7 @@
     <button id="start-btn" onclick="startGame()">ابدأ اللعب</button>
   </div>
 
-  <div id="target-container">
-    <div id="score">النتيجة: 0</div>
-    <div id="target-box">
-      الهدف: <span id="target-text">أخضر</span>
-    </div>
-  </div>
+  <div id="score-ui">النتيجة: 0</div>
 
   <script>
     let score = 0;
@@ -88,7 +69,12 @@
     let gameStarted = false;
 
     let targetColorText = "أخضر";
-    const colorsMap = { "أصفر": 0xffff00, "أخضر": 0x00ff00, "أزرق": 0x0000ff, "أحمر": 0xff0000 };
+    const colorsMap = { 
+      "أصفر": 0xffff00, 
+      "أخضر": 0x00ff00, 
+      "أزرق": 0x0000ff, 
+      "أحمر": 0xff0000 
+    };
     const colorNames = ["أصفر", "أخضر", "أزرق", "أحمر"];
 
     const scene = new THREE.Scene();
@@ -112,19 +98,19 @@
     floor.position.set(0, -0.05, -1000);
     scene.add(floor);
 
-    // المكعب
+    // المكعب - أبيض دائماً
     const cubeGeo = new THREE.BoxGeometry(0.7, 0.7, 0.7);
     const cubeMat = new THREE.MeshLambertMaterial({ color: 0xffffff });
     const cube = new THREE.Mesh(cubeGeo, cubeMat);
     cube.position.set(0, 0.35, 0);
     scene.add(cube);
 
-    // الأبواب
+    // مجموعة الأبواب
     const doorsGroup = new THREE.Group();
     doorsGroup.position.set(0, 0, -15);
     scene.add(doorsGroup);
 
-    // جعل الأبواب متلاصقة تماماً (عرض الباب 1.25 والمسافة بين مراكزها 1.25)
+    // إنشاء الأبواب المتلاصقة
     const doorWidth = 1.25;
     const doorPositions = [-1.875, -0.625, 0.625, 1.875]; 
 
@@ -135,6 +121,21 @@
       door.position.set(x, 1.1, 0);
       doorsGroup.add(door);
     });
+
+    // إنشاء مستطيل اللوحة المباشر فوق الأبواب في البيئة ثلاثية الأبعاد
+    const signCanvas = document.createElement('canvas');
+    signCanvas.width = 512;
+    signCanvas.height = 128;
+    const signCtx = signCanvas.getContext('2d');
+
+    const signTexture = new THREE.CanvasTexture(signCanvas);
+    const signGeo = new THREE.PlaneGeometry(3.5, 0.9);
+    const signMat = new THREE.MeshBasicMaterial({ map: signTexture, transparent: true });
+    const signMesh = new THREE.Mesh(signGeo, signMat);
+    
+    // وضع المستطيل فوق منتصف الأبواب مباشرة
+    signMesh.position.set(0, 2.8, 0);
+    doorsGroup.add(signMesh);
 
     let currentDoorZ = -15;
     let isDragging = false;
@@ -149,24 +150,44 @@
     window.addEventListener('pointerup', () => { isDragging = false; });
     window.addEventListener('pointermove', (e) => {
       if (isDragging && gameStarted) {
-        const deltaX = (e.clientX - previousX) * 0.01;
-        cube.position.x = Math.max(-2.2, Math.min(2.2, cube.position.x + deltaX));
+        const deltaX = (e.clientX - previousX) * 0.012;
+        // حركة مستقيمة أفقية
+        cube.position.x = Math.max(-2.1, Math.min(2.1, cube.position.x + deltaX));
         previousX = e.clientX;
       }
     });
 
-    function updateTarget() {
-      targetColorText = colorNames[Math.floor(Math.random() * colorNames.length)];
-      let textColorName = colorNames[Math.floor(Math.random() * colorNames.length)];
-      let cubeColorName = colorNames[Math.floor(Math.random() * colorNames.length)];
-      
-      cube.material.color.setHex(colorsMap[cubeColorName]);
+    // رسم اللوحة فوق الأبواب بألوان مضللة
+    function renderSign(text, textColorHex) {
+      // خلفية اللوحة
+      signCtx.fillStyle = 'rgba(0, 0, 0, 0.85)';
+      signCtx.fillRect(0, 0, signCanvas.width, signCanvas.height);
 
-      const targetElem = document.getElementById('target-text');
-      targetElem.innerText = targetColorText;
+      // إطار اللوحة
+      signCtx.strokeStyle = '#ffffff';
+      signCtx.lineWidth = 8;
+      signCtx.strokeRect(4, 4, signCanvas.width - 8, signCanvas.height - 8);
+
+      // كتابة النص
+      signCtx.fillStyle = textColorHex;
+      signCtx.font = 'Bold 55px sans-serif';
+      signCtx.textAlign = 'center';
+      signCtx.textBaseline = 'middle';
+      signCtx.fillText(text, signCanvas.width / 2, signCanvas.height / 2);
+
+      signTexture.needsUpdate = true;
+    }
+
+    function updateTarget() {
+      // اختيار الكلمة المطلوبة (اسم اللون)
+      targetColorText = colorNames[Math.floor(Math.random() * colorNames.length)];
       
-      const textColorHex = '#' + colorsMap[textColorName].toString(16).padStart(6, '0');
-      targetElem.style.color = textColorHex;
+      // اختيار لون مختلف لنص الكلمة للتمويه (مثال: اسم اللون أخضر، ولون الخط أحمر)
+      let otherColors = colorNames.filter(c => c !== targetColorText);
+      let textColorName = otherColors[Math.floor(Math.random() * otherColors.length)];
+      let textColorHex = '#' + colorsMap[textColorName].toString(16).padStart(6, '0');
+
+      renderSign(targetColorText, textColorHex);
     }
 
     function startGame() {
@@ -178,7 +199,7 @@
     function resetGame() {
       score = 0;
       currentSpeed = baseSpeed;
-      document.getElementById('score').innerText = "النتيجة: 0";
+      document.getElementById('score-ui').innerText = "النتيجة: 0";
       cube.position.set(0, 0.35, 0);
       currentDoorZ = -15;
       doorsGroup.position.z = -15;
@@ -195,14 +216,14 @@
       requestAnimationFrame(animate);
 
       if (gameStarted) {
-        // تحريك المكعب
+        // تحريك المكعب للأمام
         cube.position.z -= currentSpeed;
 
-        // الكاميرا تتبع المكعب بمرونة
+        // الكاميرا مثبتة وتتحرك بخط مستقيم
         camera.position.z = cube.position.z + 6;
-        camera.position.y = 4.5;
-        camera.position.x = cube.position.x * 0.4;
-        camera.lookAt(cube.position.x, 0.5, cube.position.z - 4);
+        camera.position.y = 4.2;
+        camera.position.x = 0; 
+        camera.lookAt(0, 0.5, cube.position.z - 4);
 
         // اجتياز الأبواب
         if (cube.position.z <= currentDoorZ) {
@@ -214,11 +235,11 @@
 
           if (chosen === targetColorText) {
             score++;
-            document.getElementById('score').innerText = "النتيجة: " + score;
+            document.getElementById('score-ui').innerText = "النتيجة: " + score;
             
-            // زيادة السرعة كل 5 نقاط
+            // زيادة السرعة بمقدار كبير كل 5 نقاط
             if (score % 5 === 0) {
-              currentSpeed += 0.03;
+              currentSpeed += 0.07;
             }
 
             currentDoorZ -= 25;
